@@ -1,3 +1,5 @@
+create extension if not exists "uuid-ossp";
+
 create schema contacts;
 
 CREATE TABLE contacts.personas (
