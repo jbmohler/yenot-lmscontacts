@@ -17,7 +17,7 @@ def get_api_personas_list():
     tag = request.query.get('tag_id', None)
 
     select = """
-select l_name, f_name, title
+select id, l_name, f_name, title
 from contacts.personas
 where /*WHERE*/
 """
@@ -25,7 +25,7 @@ where /*WHERE*/
     params = {}
     wheres = []
     if frag != None and frag != '':
-        params['frag'] = '%{}%'.format(frag)
+        params['frag'] = api.sanitize_fragment(frag)
         wheres.append("personas.l_name like %(frag)s")
     if tag != None:
         params['tag'] = '%{}%'.format(frag)
@@ -34,6 +34,63 @@ where /*WHERE*/
     if len(wheres) == 0:
         wheres.append("True")
     select = select.replace("/*WHERE*/", " and ".join(wheres))
+
+    results = api.Results(default_title=True)
+    with app.dbconn() as conn:
+        cm = api.ColumnMap(\
+                id=api.cgen.lms_personas_persona.surrogate(),
+                l_name=api.cgen.lms_personas_persona.name(url_key='id', represents=True))
+        results.tables['personas', True] = api.sql_tab2(conn, select, params, cm)
+    return results.json_out()
+
+def get_api_personas_search_all_prompts():
+    return api.PromptList(
+            frag=api.cgen.basic(label='Search'),
+            __order__=['frag'])
+
+@app.get('/api/personas/search-all', name='get_api_personas_search_all', \
+        report_prompts=get_api_personas_search_all_prompts,
+        report_title='Contact List')
+def get_api_personas_search_all():
+    frag = request.query.get('frag', None)
+
+    select = """
+(
+    select personas.id, null::uuid as bit_id, l_name, f_name, title
+    from contacts.personas
+    where /*WHERE*/
+)union(
+    select personas.id, bit.id as bit_id, l_name, f_name, title
+    from contacts.personas
+    join contacts.email_addresses bit on bit.persona_id=personas.id
+    where /*BIT_WHERE*/
+)union(
+    select personas.id, bit.id as bit_id, l_name, f_name, title
+    from contacts.personas
+    join contacts.phone_numbers bit on bit.persona_id=personas.id
+    where /*BIT_WHERE*/
+)union(
+    select personas.id, bit.id as bit_id, l_name, f_name, title
+    from contacts.personas
+    join contacts.street_addresses bit on bit.persona_id=personas.id
+    where /*BIT_WHERE*/
+)union(
+    select personas.id, bit.id as bit_id, l_name, f_name, title
+    from contacts.personas
+    join contacts.urls bit on bit.persona_id=personas.id
+    where /*BIT_WHERE*/
+)
+"""
+
+    params = {}
+    params['frag'] = api.sanitize_fragment(frag)
+    wheres = []
+    wheres.append("personas.l_name ilike %(frag)s or personas.f_name ilike %(frag)s or personas.memo ilike %(frag)s")
+    bit_wheres = []
+    bit_wheres.append("bit.memo ilike %(frag)s or bit.name ilike %(frag)s")
+
+    select = select.replace("/*WHERE*/", " and ".join(wheres))
+    select = select.replace("/*BIT_WHERE*/", " and ".join(bit_wheres))
 
     results = api.Results(default_title=True)
     with app.dbconn() as conn:

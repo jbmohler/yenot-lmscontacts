@@ -4,7 +4,7 @@ create schema contacts;
 
 CREATE TABLE contacts.personas (
     id uuid primary key default uuid_generate_v1mc(),
-    l_name character varying(80) not null check(char_length(l_name)>=2),
+    l_name character varying(80), -- not null check(char_length(l_name)>=2),
     f_name character varying(40),
     title character varying(10),
     memo text,
