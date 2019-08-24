@@ -17,7 +17,7 @@ def get_api_personas_list():
     tag = request.query.get('tag_id', None)
 
     select = """
-select l_name, f_name, title
+select id, l_name, f_name, title, organization
 from contacts.personas
 where /*WHERE*/
 """
@@ -93,11 +93,11 @@ def get_api_persona_new():
     results.keys['new_row'] = True
     return results.json_out()
 
-@app.put('/api/persona/<acnt_id>', name='put_api_persona')
-def put_api_persona(acnt_id):
-    acc = api.table_from_tab2('persona')
+@app.put('/api/persona/<per_id>', name='put_api_persona')
+def put_api_persona(per_id):
+    acc = api.table_from_tab2('persona', amendments=['id'], options=['l_name', 'f_name', 'title', 'organization', 'memo', 'anniversary', 'birthday'])
 
-    if len(acc.rows) != 1 or acc.rows[0].id != acnt_id:
+    if len(acc.rows) != 1 or acc.rows[0].id != per_id:
         raise api.UserError('invalid-input', 'There must be exactly one row and it must match the url.')
 
     with app.dbconn() as conn:
@@ -107,13 +107,29 @@ def put_api_persona(acnt_id):
 
     return api.Results().json_out()
 
-@app.post('/api/persona/<acnt_id>/contact-bits', name='post_api_persona_contact_bits')
-def post_api_persona_contact_bits(acnt_id):
+@app.delete('/api/persona/<per_id>', name='delete_api_persona')
+def delete_api_persona(per_id):
+    delete_sql = """
+delete from contacts.urls where persona_id=%(pid)s;
+delete from contacts.street_addresses where persona_id=%(pid)s;
+delete from contacts.phone_numbers where persona_id=%(pid)s;
+delete from contacts.email_addresses where persona_id=%(pid)s;
+delete from contacts.personas where id=%(pid)s;
+"""
+
+    with app.dbconn() as conn:
+        api.sql_void(conn, delete_sql, {'pid': per_id})
+        conn.commit()
+
+    return api.Results().json_out()
+
+@app.post('/api/persona/<per_id>/contact-bits', name='post_api_persona_contact_bits')
+def post_api_persona_contact_bits(per_id):
     acc = api.table_from_tab2('phone_numbers', amendments=['id', 'persona_id'])
 
     for row in acc.rows:
         row.id = None
-        row.persona_id = acnt_id
+        row.persona_id = per_id
 
     with app.dbconn() as conn:
         with api.writeblock(conn) as w:
