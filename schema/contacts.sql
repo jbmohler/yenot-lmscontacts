@@ -71,3 +71,59 @@ CREATE TABLE contacts.urls (
     username character varying(50),
     password character varying(50)
 );
+
+create view contacts.perfts_search as 
+select id, 
+    to_tsvector(coalesce(l_name, ''))||
+    to_tsvector(coalesce(f_name, ''))||
+    to_tsvector(coalesce(organization, ''))||
+    to_tsvector(coalesce(title, ''))||
+    to_tsvector(coalesce(memo, '')) as fts_search
+from contacts.personas;
+
+create view contacts.bits as 
+(
+    select id, persona_id, 'urls' as bit_type,
+	name, memo, is_primary,
+        to_tsvector(coalesce(memo, ''))||
+        to_tsvector(coalesce(name, ''))||
+        to_tsvector(coalesce(url, '')) as fts_search,
+	json_build_object(
+		'url', url,
+		'username', username,
+		'password', password) as bit_data
+    from contacts.urls
+)union all(
+    select id, persona_id, 'street_addresses' as bit_type,
+	name, memo, is_primary,
+        to_tsvector(coalesce(memo, ''))||
+        to_tsvector(coalesce(name, ''))||
+        to_tsvector(coalesce(address1, ''))||
+        to_tsvector(coalesce(address2, ''))||
+        to_tsvector(coalesce(city, '')) as fts_search,
+	json_build_object(
+		'address1', address1,
+		'address2', address2,
+		'city', city,
+		'state', state,
+		'zip', zip,
+		'country', country) as bit_data
+    from contacts.street_addresses
+)union all(
+    select id, persona_id, 'phone_numbers' as bit_type,
+	name, memo, is_primary,
+        to_tsvector(coalesce(memo, ''))||
+        to_tsvector(coalesce(name, '')) as fts_search,
+	json_build_object(
+		'number', number) as bit_data
+    from contacts.phone_numbers
+)union all(
+    select id, persona_id, 'email_addresses' as bit_type,
+	name, memo, is_primary,
+        to_tsvector(coalesce(memo, ''))||
+        to_tsvector(coalesce(name, '')) as fts_search,
+	json_build_object(
+		'email', email) as bit_data
+    from contacts.email_addresses
+);
+

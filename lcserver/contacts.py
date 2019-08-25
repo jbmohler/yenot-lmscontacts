@@ -17,18 +17,19 @@ def get_api_personas_list():
     tag = request.query.get('tag_id', None)
 
     select = """
-select id, l_name, f_name, title, organization
+select personas.id, personas.l_name, personas.f_name, personas.title, personas.organization
 from contacts.personas
+join contacts.perfts_search fts on personas.id=fts.id
 where /*WHERE*/
 """
 
     params = {}
     wheres = []
     if frag != None and frag != '':
-        params['frag'] = '%{}%'.format(frag)
-        wheres.append("personas.l_name like %(frag)s")
+        params['frag'] = api.sanitize_fts(frag)
+        wheres.append("fts.fts_search @@ to_tsquery(%(frag)s)")
     if tag != None:
-        params['tag'] = '%{}%'.format(frag)
+        params['tag'] = tag
         wheres.append("(select count(*) from contacts.tagpersona where tag_id=%(tag)s and persona_id=persona.id)>0")
 
     if len(wheres) == 0:
@@ -49,9 +50,11 @@ select *
 from contacts.personas
 where /*WHERE*/"""
 
-    select_bit1 = """
-select *
-from contacts.phone_numbers bit
+    select_bits = """
+select id, persona_id, bit_type, 
+    name, memo, is_primary,
+    bit_data
+from contacts.bits
 where /*BWHERE*/"""
 
     wheres = []
@@ -60,14 +63,14 @@ where /*BWHERE*/"""
     if a_id != None:
         params['i'] = a_id
         wheres.append("personas.id=%(i)s")
-        bwheres.append("bit.persona_id=%(i)s")
+        bwheres.append("bits.persona_id=%(i)s")
     if newrow:
         wheres.append("False")
         bwheres.append("False")
 
     assert len(wheres) == 1
     select = select.replace("/*WHERE*/", wheres[0])
-    select_bit1 = select_bit1.replace("/*BWHERE*/", bwheres[0])
+    select_bits = select_bits.replace("/*BWHERE*/", bwheres[0])
 
     results = api.Results()
     with app.dbconn() as conn:
@@ -79,7 +82,7 @@ where /*BWHERE*/"""
             rows = api.tab2_rows_default(columns, [None], default_row)
 
         results.tables['persona', True] = columns, rows
-        results.tables['phone_numbers'] = api.sql_tab2(conn, select_bit1, params)
+        results.tables['bits'] = api.sql_tab2(conn, select_bits, params)
     return results
 
 @app.get('/api/persona/<a_id>', name='get_api_persona')
@@ -119,6 +122,69 @@ delete from contacts.personas where id=%(pid)s;
 
     with app.dbconn() as conn:
         api.sql_void(conn, delete_sql, {'pid': per_id})
+        conn.commit()
+
+    return api.Results().json_out()
+
+@app.get('/api/persona/<per_id>/bit/new', name='get_api_persona_bit_new')
+def get_api_persona_new(per_id):
+    bittype = request.query.get('bit_type')
+
+    if bittype not in ('urls', 'phone_numbers', 'street_addresses', 'email_addresses'):
+        raise api.UserError('invalid-param', 'select one of the valid bit types')
+
+    select = """
+select bit.*
+from contacts./*BIT*/ bit
+where false"""
+
+    results = api.Results()
+    with app.dbconn() as conn:
+        select = select.replace("/*BIT*/", bittype)
+        columns, rows = api.sql_tab2(conn, select)
+
+        def default_row(index, row):
+            row.id = str(uuid.uuid1())
+            row.persona_id = per_id
+        rows = api.tab2_rows_default(columns, [None], default_row)
+
+        results.tables['bits', True] = columns, rows
+    return results.json_out()
+
+@app.put('/api/persona/<per_id>/bit/<bit_id>', name='put_api_persona_bit')
+def put_api_persona_contact_bits(per_id, bit_id):
+    bit = api.table_from_tab2('bit', amendments=['id', 'persona_id'], 
+            options=['is_primary', 'name', 'memo', 
+                'url', 'username', 'password', 
+                ''])
+
+    if 'url' in bit.DataRow.__slots__:
+        bittype = 'urls'
+    elif 'email' in bit.DataRow.__slots__:
+        bittype = 'email_addresses'
+    elif 'address1' in bit.DataRow.__slots__:
+        bittype = 'street_addresses'
+    elif 'number' in bit.DataRow.__slots__:
+        bittype = 'phone_numbers'
+
+    with app.dbconn() as conn:
+        with api.writeblock(conn) as w:
+            w.upsert_rows('contacts.{}'.format(bittype), bit)
+        conn.commit()
+
+    return api.Results().json_out()
+
+@app.delete('/api/persona/<per_id>/bit/<bit_id>', name='delete_api_persona_bit')
+def delete_api_persona_bit(per_id, bit_id):
+    delete_sql = """
+delete from contacts.urls where persona_id=%(pid)s and id=%(bid)s;
+delete from contacts.street_addresses where persona_id=%(pid)s and id=%(bid)s;
+delete from contacts.phone_numbers where persona_id=%(pid)s and id=%(bid)s;
+delete from contacts.email_addresses where persona_id=%(pid)s and id=%(bid)s;
+"""
+
+    with app.dbconn() as conn:
+        api.sql_void(conn, delete_sql, {'pid': per_id, 'bid': bit_id})
         conn.commit()
 
     return api.Results().json_out()
