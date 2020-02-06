@@ -17,7 +17,12 @@ def get_api_personas_list():
     tag = request.query.get('tag_id', None)
 
     select = """
-select personas.id, personas.l_name, personas.f_name, personas.title, personas.organization
+select personas.id, 
+    concat_ws(' ',
+        case when personas.title='' then null else personas.title end,
+        case when personas.f_name='' then null else personas.f_name end,
+        case when personas.l_name='' then null else personas.l_name end) as entity_name,
+    personas.l_name, personas.f_name, personas.title, personas.organization
 from contacts.personas
 join contacts.perfts_search fts on personas.id=fts.id
 where /*WHERE*/
@@ -40,7 +45,10 @@ where /*WHERE*/
     with app.dbconn() as conn:
         cm = api.ColumnMap(\
                 id=api.cgen.lms_personas_persona.surrogate(),
-                l_name=api.cgen.lms_personas_persona.name(url_key='id', represents=True))
+                entity_name=api.cgen.lms_personas_persona.name(url_key='id', represents=True),
+                l_name=api.cgen.lms_personas_persona.name(hidden=True),
+                f_name=api.cgen.lms_personas_persona.name(hidden=True),
+                title=api.cgen.lms_personas_persona.name(hidden=True))
         results.tables['personas', True] = api.sql_tab2(conn, select, params, cm)
     return results.json_out()
 
