@@ -135,7 +135,7 @@ delete from contacts.personas where id=%(pid)s;
     return api.Results().json_out()
 
 @app.get('/api/persona/<per_id>/bit/new', name='get_api_persona_bit_new')
-def get_api_persona_new(per_id):
+def get_api_persona_bit_new(per_id):
     bittype = request.query.get('bit_type')
 
     if bittype not in ('urls', 'phone_numbers', 'street_addresses', 'email_addresses'):
@@ -159,12 +159,35 @@ where false"""
         results.tables['bits', True] = columns, rows
     return results.json_out()
 
+@app.get('/api/persona/<per_id>/bit/<bit_id>', name='get_api_persona_bit')
+def get_api_persona_bit(per_id, bit_id):
+    bittype = request.query.get('bit_type', None)
+
+    if bittype not in ('urls', 'phone_numbers', 'street_addresses', 'email_addresses'):
+        raise api.UserError('invalid-param', 'select one of the valid bit types')
+
+    select = """
+select bit.*
+from contacts./*BIT*/ bit
+where bit.id=%(bit_id)s"""
+
+    results = api.Results()
+    with app.dbconn() as conn:
+        if bittype == None:
+            bittype = api.sql_1row(conn, "select bit_type from contacts.bit where id=%(bit_id)s", {"bit_id": bit_id})
+
+        select = select.replace("/*BIT*/", bittype)
+        results.tables['bit', True] = api.sql_tab2(conn, select, {"bit_id": bit_id})
+    return results.json_out()
+
 @app.put('/api/persona/<per_id>/bit/<bit_id>', name='put_api_persona_bit')
 def put_api_persona_contact_bits(per_id, bit_id):
     bit = api.table_from_tab2('bit', amendments=['id', 'persona_id'], 
             options=['is_primary', 'name', 'memo', 
                 'url', 'username', 'password', 
-                ''])
+                'email',
+                'number',
+                'address1', 'address2', 'city', 'state', 'zip', 'country'])
 
     if 'url' in bit.DataRow.__slots__:
         bittype = 'urls'
