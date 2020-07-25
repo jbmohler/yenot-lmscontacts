@@ -7,7 +7,8 @@ app = api.get_global_app()
 def get_api_personas_list_prompts():
     return api.PromptList(
             frag=api.cgen.basic(label='Search'),
-            __order__=['frag'])
+            tag_id=api.cgen.contact_tag.id(label='Tag'),
+            __order__=['frag', 'tag_id'])
 
 @app.get('/api/personas/list', name='get_api_personas_list', \
         report_prompts=get_api_personas_list_prompts,
@@ -33,9 +34,9 @@ where /*WHERE*/
     if frag != None and frag != '':
         params['frag'] = api.sanitize_fts(frag)
         wheres.append("fts.fts_search @@ to_tsquery(%(frag)s)")
-    if tag != None:
+    if tag not in ['', None]:
         params['tag'] = tag
-        wheres.append("(select count(*) from contacts.tagpersona where tag_id=%(tag)s and persona_id=persona.id)>0")
+        wheres.append("(select count(*) from contacts.tagpersona where tag_id=%(tag)s and persona_id=personas.id)>0")
 
     if len(wheres) == 0:
         wheres.append("True")
@@ -121,10 +122,16 @@ def put_api_persona(per_id):
 @app.delete('/api/persona/<per_id>', name='delete_api_persona')
 def delete_api_persona(per_id):
     delete_sql = """
+-- delete bits
 delete from contacts.urls where persona_id=%(pid)s;
 delete from contacts.street_addresses where persona_id=%(pid)s;
 delete from contacts.phone_numbers where persona_id=%(pid)s;
 delete from contacts.email_addresses where persona_id=%(pid)s;
+
+-- delete tags
+delete from contacts.tagpersona where persona_id=%(pid)s;
+
+-- delete the main persona
 delete from contacts.personas where id=%(pid)s;
 """
 

@@ -6,10 +6,16 @@ app = api.get_global_app()
 @app.get('/api/tags/list', name='get_api_tags_list', \
         report_title='Tag List')
 def get_api_tags_list():
-    select = """
-select *
+    select = r"""
+select tags.name,
+    tags.id,
+    concat_ws(E'\u001C', tpar4.name, tpar3.name, tpar2.name, tpar1.name, tags.name) as path_name
 from contacts.tags
-order by name
+left outer join contacts.tags tpar1 on tpar1.id=tags.parent_id
+left outer join contacts.tags tpar2 on tpar2.id=tpar1.parent_id
+left outer join contacts.tags tpar3 on tpar3.id=tpar2.parent_id
+left outer join contacts.tags tpar4 on tpar4.id=tpar3.parent_id
+order by path_name
 """
 
     params = {}
