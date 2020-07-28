@@ -9,7 +9,8 @@ def get_api_tags_list():
     select = r"""
 select tags.name,
     tags.id,
-    concat_ws(E'\u001C', tpar4.name, tpar3.name, tpar2.name, tpar1.name, tags.name) as path_name
+    concat_ws(E'\u001C', tpar4.name, tpar3.name, tpar2.name, tpar1.name, tags.name) as path_name,
+    tags.parent_id
 from contacts.tags
 left outer join contacts.tags tpar1 on tpar1.id=tags.parent_id
 left outer join contacts.tags tpar2 on tpar2.id=tpar1.parent_id

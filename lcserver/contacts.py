@@ -55,8 +55,18 @@ where /*WHERE*/
 
 def _get_api_persona(a_id=None, newrow=False):
     select = """
-select *
+select
+    concat_ws(' ',
+        case when personas.title='' then null else personas.title end,
+        case when personas.f_name='' then null else personas.f_name end,
+        case when personas.l_name='' then null else personas.l_name end) as entity_name,
+    personas.*,
+    taglist.tag_ids
 from contacts.personas
+join lateral (
+    select array_agg(tagpersona.tag_id::text) as tag_ids
+    from contacts.tagpersona
+    where tagpersona.persona_id=personas.id) taglist on true
 where /*WHERE*/"""
 
     select_bits = """
@@ -107,14 +117,35 @@ def get_api_persona_new():
 
 @app.put('/api/persona/<per_id>', name='put_api_persona')
 def put_api_persona(per_id):
-    acc = api.table_from_tab2('persona', amendments=['id'], options=['l_name', 'f_name', 'title', 'organization', 'memo', 'anniversary', 'birthday'])
+    persona = api.table_from_tab2('persona', amendments=['id'], options=['l_name', 'f_name', 'title', 'organization', 'memo', 'anniversary', 'birthday'])
+    try:
+        tagdeltas = api.table_from_tab2('tagdeltas', required=['tags_add', 'tags_remove'])
+    except KeyError:
+        tagdeltas = None
 
-    if len(acc.rows) != 1 or acc.rows[0].id != per_id:
+    if len(persona.rows) != 1 or persona.rows[0].id != per_id:
         raise api.UserError('invalid-input', 'There must be exactly one row and it must match the url.')
+    if tagdeltas != None and len(tagdeltas.rows) != 1:
+        raise api.UserError('invalid-input', 'There must be exactly one tagdeltas row.')
+
+    insert_adds = """
+insert into contacts.tagpersona (tag_id, persona_id)
+select unnest(%(adds)s)::uuid, %(per)s"""
+# TODO:  need unique constraint
+#on conflict (tag_id, persona_id) do nothing"""
+
+    delete_removes = """
+delete from contacts.tagpersona
+where tag_id in %(removes)s and persona_id=%(per)s"""
 
     with app.dbconn() as conn:
         with api.writeblock(conn) as w:
-            w.upsert_rows('contacts.personas', acc)
+            w.upsert_rows('contacts.personas', persona)
+        if tagdeltas:
+            if tagdeltas.rows[0].tags_add:
+                api.sql_void(conn, insert_adds, {"adds": tagdeltas.rows[0].tags_add, "per": per_id})
+            if tagdeltas.rows[0].tags_remove:
+                api.sql_void(conn, delete_removes, {"removes": tuple(tagdeltas.rows[0].tags_remove), "per": per_id})
         conn.commit()
 
     return api.Results().json_out()
