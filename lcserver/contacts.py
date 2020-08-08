@@ -15,6 +15,7 @@ def get_api_personas_list_prompts():
         report_title='Contact List')
 def get_api_personas_list():
     frag = request.query.get('frag', None)
+    included = request.query.get('included', None)
     tag = request.query.get('tag_id', None)
 
     select = """
@@ -31,7 +32,14 @@ where /*WHERE*/
 
     params = {}
     wheres = []
-    if frag != None and frag != '':
+    if frag not in ['', None] and included not in ['', None]:
+        params['frag'] = api.sanitize_fts(frag)
+        params['idlist'] = tuple(included.split(';'))
+        wheres.append("(fts.fts_search @@ to_tsquery(%(frag)s) or fts.id in %(idlist)s)")
+    elif frag in ['', None] and included not in ['', None]:
+        params['idlist'] = tuple(included.split(';'))
+        wheres.append("fts.id in %(idlist)s")
+    elif frag not in ['', None] and included in ['', None]:
         params['frag'] = api.sanitize_fts(frag)
         wheres.append("fts.fts_search @@ to_tsquery(%(frag)s)")
     if tag not in ['', None]:
