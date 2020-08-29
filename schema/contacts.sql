@@ -14,7 +14,7 @@ CREATE TABLE contacts.personas (
 );
 
 CREATE TABLE contacts.tags (
-    id uuid primary key,
+    id uuid primary key default uuid_generate_v1mc(),
     name character varying(40) not null check(char_length(name)>=2),
     parent_id uuid
 );
