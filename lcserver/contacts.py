@@ -55,9 +55,9 @@ where /*WHERE*/
         cm = api.ColumnMap(\
                 id=api.cgen.lms_personas_persona.surrogate(),
                 entity_name=api.cgen.lms_personas_persona.name(url_key='id', represents=True),
-                l_name=api.cgen.lms_personas_persona.name(hidden=True),
-                f_name=api.cgen.lms_personas_persona.name(hidden=True),
-                title=api.cgen.lms_personas_persona.name(hidden=True))
+                l_name=api.cgen.auto(hidden=True),
+                f_name=api.cgen.auto(hidden=True),
+                title=api.cgen.auto(hidden=True))
         results.tables['personas', True] = api.sql_tab2(conn, select, params, cm)
     return results.json_out()
 
@@ -125,7 +125,7 @@ def get_api_persona_new():
 
 @app.put('/api/persona/<per_id>', name='put_api_persona')
 def put_api_persona(per_id):
-    persona = api.table_from_tab2('persona', amendments=['id'], options=['l_name', 'f_name', 'title', 'organization', 'memo', 'anniversary', 'birthday'])
+    persona = api.table_from_tab2('persona', amendments=['id'], options=['corporate_entity', 'l_name', 'f_name', 'title', 'organization', 'memo', 'anniversary', 'birthday'])
     try:
         tagdeltas = api.table_from_tab2('tagdeltas', required=['tags_add', 'tags_remove'])
     except KeyError:
@@ -135,6 +135,19 @@ def put_api_persona(per_id):
         raise api.UserError('invalid-input', 'There must be exactly one row and it must match the url.')
     if tagdeltas != None and len(tagdeltas.rows) != 1:
         raise api.UserError('invalid-input', 'There must be exactly one tagdeltas row.')
+
+    for row in persona.rows:
+        if row.corporate_entity:
+            if row.f_name is not None:
+                if row.f_name == '':
+                    row.f_name = None
+                else:
+                    raise api.UserError('invalid-input', 'Corporate entities must have blank title and f_name.')
+            if row.title is not None:
+                if row.title == '':
+                    row.title = None
+                else:
+                    raise api.UserError('invalid-input', 'Corporate entities must have blank title and title.')
 
     insert_adds = """
 insert into contacts.tagpersona (tag_id, persona_id)

@@ -4,13 +4,16 @@ create schema contacts;
 
 CREATE TABLE contacts.personas (
     id uuid primary key default uuid_generate_v1mc(),
+    corporate_entity boolean default false,
     l_name character varying(80), -- not null check(char_length(l_name)>=2),
     f_name character varying(40),
     title character varying(10),
     memo text,
     birthday date,
     anniversary date,
-    organization text
+    organization text,
+    constraint chk_corp_names check(not corporate_entity or (f_name is null and title is null and char_length(l_name) >= 2)),
+    constraint chk_indiv_names check(corporate_entity or (char_length(l_name)>=2 or char_length(f_name)>=2))
 );
 
 CREATE TABLE contacts.tags (
