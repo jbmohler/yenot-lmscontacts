@@ -332,7 +332,7 @@ def put_api_persona_contact_bits(per_id, bit_id):
 
     with app.dbconn() as conn:
         with api.writeblock(conn) as w:
-            w.upsert_rows("contacts.{}".format(bittype), bit)
+            w.upsert_rows(f"contacts.{bittype}", bit)
         conn.commit()
 
     return api.Results().json_out()
