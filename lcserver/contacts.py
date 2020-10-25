@@ -1,4 +1,5 @@
 import uuid
+import json
 from bottle import request
 import yenot.backend.api as api
 
@@ -217,6 +218,9 @@ where tag_id in %(removes)s and persona_id=%(per)s"""
                     delete_removes,
                     {"removes": tuple(tagdeltas.rows[0].tags_remove), "per": per_id},
                 )
+
+        payload = json.dumps({"id": per_id})
+        api.sql_void(conn, "notify personas, %(payload)s", {"payload": payload})
         conn.commit()
 
     return api.Results().json_out()
@@ -240,6 +244,9 @@ delete from contacts.personas where id=%(pid)s;
 
     with app.dbconn() as conn:
         api.sql_void(conn, delete_sql, {"pid": per_id})
+
+        payload = json.dumps({"id": per_id})
+        api.sql_void(conn, "notify personas, %(payload)s", {"payload": payload})
         conn.commit()
 
     return api.Results().json_out()
