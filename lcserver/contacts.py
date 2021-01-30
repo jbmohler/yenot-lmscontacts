@@ -307,35 +307,60 @@ where bit.id=%(bit_id)s"""
 
 @app.put("/api/persona/<per_id>/bit/<bit_id>", name="put_api_persona_bit")
 def put_api_persona_contact_bits(per_id, bit_id):
+    base_cols = ["is_primary", "name", "memo"]
+    bt_url_cols = ["url", "username", "password"]
+    bt_email_cols = ["email"]
+    bt_number_cols = ["number"]
+    bt_address_cols = ["address1", "address2", "city", "state", "zip", "country"]
+
     bit = api.table_from_tab2(
         "bit",
         amendments=["id", "persona_id"],
         options=[
-            "is_primary",
-            "name",
-            "memo",
-            "url",
-            "username",
-            "password",
-            "email",
-            "number",
-            "address1",
-            "address2",
-            "city",
-            "state",
-            "zip",
-            "country",
+            *base_cols,
+            *bt_url_cols,
+            *bt_email_cols,
+            *bt_number_cols,
+            *bt_address_cols,
         ],
     )
 
+    # detect the bit-type from the given columns
     if "url" in bit.DataRow.__slots__:
         bittype = "urls"
     elif "email" in bit.DataRow.__slots__:
         bittype = "email_addresses"
-    elif "address1" in bit.DataRow.__slots__:
-        bittype = "street_addresses"
     elif "number" in bit.DataRow.__slots__:
         bittype = "phone_numbers"
+    elif "address1" in bit.DataRow.__slots__:
+        bittype = "street_addresses"
+
+    # validate that no invalid columns (or ambiguous) are given for this bit
+    # type
+    slots = bit.DataRow.__slots__[:]
+    slots.remove("id")
+    slots.remove("persona_id")
+    allowed = {
+        "urls": base_cols + bt_url_cols,
+        "email_addresses": base_cols + bt_email_cols,
+        "phone_numbers": base_cols + bt_number_cols,
+        "street_addresses": base_cols + bt_address_cols,
+    }[bittype]
+    if len(set(slots).difference(allowed)) > 0:
+        extra = set(slots).difference(allowed)
+        raise api.UserError(
+            "invalid-structure",
+            f"The column(s) {', '.join(extra)} are not allows in bit type {bittype}",
+        )
+
+    if len(bit.rows) != 1:
+        raise api.UserError(
+            "invalid-structure", "write exactly one bit in this end-point"
+        )
+
+    for row in bit.rows:
+        row.persona_id = per_id
+        row.id = bit_id
 
     with app.dbconn() as conn:
         with api.writeblock(conn) as w:
@@ -356,22 +381,6 @@ delete from contacts.email_addresses where persona_id=%(pid)s and id=%(bid)s;
 
     with app.dbconn() as conn:
         api.sql_void(conn, delete_sql, {"pid": per_id, "bid": bit_id})
-        conn.commit()
-
-    return api.Results().json_out()
-
-
-@app.post("/api/persona/<per_id>/contact-bits", name="post_api_persona_contact_bits")
-def post_api_persona_contact_bits(per_id):
-    acc = api.table_from_tab2("phone_numbers", amendments=["id", "persona_id"])
-
-    for row in acc.rows:
-        row.id = None
-        row.persona_id = per_id
-
-    with app.dbconn() as conn:
-        with api.writeblock(conn) as w:
-            w.upsert_rows("contacts.phone_numbers", acc)
         conn.commit()
 
     return api.Results().json_out()
