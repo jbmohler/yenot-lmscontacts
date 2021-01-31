@@ -1,9 +1,19 @@
+import os
 import uuid
 import json
+import cryptography.fernet
 from bottle import request
+import rtlib
 import yenot.backend.api as api
 
 app = api.get_global_app()
+
+
+def fernet_keyed():
+
+    key = os.environ["LMS_CONTACTS_KEY"].encode("utf8")
+
+    return cryptography.fernet.Fernet(key)
 
 
 def get_api_personas_list_prompts():
@@ -126,7 +136,28 @@ where /*BWHERE*/"""
             rows = api.tab2_rows_default(columns, [None], default_row)
 
         results.tables["persona", True] = columns, rows
-        results.tables["bits"] = api.sql_tab2(conn, select_bits, params)
+        bit_colrows = api.sql_tab2(conn, select_bits, params)
+
+        # use the key to decrypt the password replacing column password_enc
+        # with password
+        f = fernet_keyed()
+
+        def decrypt(oldrow, row):
+            if (
+                "password_enc" in oldrow.bit_data
+                and oldrow.bit_data["password_enc"] != None
+            ):
+                # the dictionary from postgres comes through with password_enc as a string
+                penc = oldrow.bit_data["password_enc"]
+                if penc[:2] != r"\x":
+                    raise ValueError("expecting hex data prefixed by \\x")
+                penc = bytes.fromhex(penc[2:])
+                row.bit_data["password"] = f.decrypt(penc).decode("utf8")
+                del row.bit_data["password_enc"]
+
+        rows = api.tab2_rows_transform(bit_colrows, bit_colrows[0], decrypt)
+
+        results.tables["bits"] = bit_colrows[0], rows
     return results
 
 
@@ -269,6 +300,10 @@ where false"""
         select = select.replace("/*BIT*/", bittype)
         columns, rows = api.sql_tab2(conn, select)
 
+        if bittype == "urls":
+            # TODO: after all encrypted and password removed, include that here
+            columns = [c for c in columns if c[0] != "password_enc"]
+
         def default_row(index, row):
             row.id = str(uuid.uuid1())
             row.persona_id = per_id
@@ -301,7 +336,28 @@ where bit.id=%(bit_id)s"""
             )
 
         select = select.replace("/*BIT*/", bittype)
-        results.tables["bit", True] = api.sql_tab2(conn, select, {"bit_id": bit_id})
+        rawdata = api.sql_tab2(conn, select, {"bit_id": bit_id})
+
+        if bittype == "urls":
+            # use the key to decrypt the password replacing column password_enc
+            # with password
+            f = fernet_keyed()
+
+            columns = api.tab2_columns_transform(rawdata[0], remove=["password_enc"])
+
+            def decrypt(oldrow, row):
+                if row.password == None and oldrow.password_enc != None:
+                    # convert the psycopg2 memoryview to bytes
+                    row.password = f.decrypt(oldrow.password_enc.tobytes()).decode(
+                        "utf8"
+                    )
+
+            rows = api.tab2_rows_transform(rawdata, columns, decrypt)
+            # not so raw any more, but that's ok
+            rawdata = columns, rows
+
+        results.tables["bit", True] = rawdata
+
     return results.json_out()
 
 
@@ -363,6 +419,31 @@ def put_api_persona_contact_bits(per_id, bit_id):
         row.id = bit_id
 
     with app.dbconn() as conn:
+        if bittype == "urls" and "password" in bit.DataRow.__slots__:
+            # use the key to encrypt the password
+            f = fernet_keyed()
+
+            # replace column password with password_enc
+            # null password for now (soon that column with be deleted)
+            columns = []
+            to_copy = []
+            for c in bit.DataRow.__slots__:
+                columns.append(c)
+                to_copy.append(c)
+                if c == "password":
+                    columns.append("password_enc")
+
+            tt = rtlib.simple_table(columns)
+            for row in bit.rows:
+                with tt.adding_row() as r2:
+                    for a in to_copy:
+                        setattr(r2, a, getattr(row, a))
+                    if row.password != None:
+                        r2.password_enc = f.encrypt(row.password.encode("utf8"))
+                    r2.password = None
+
+            bit = tt
+
         with api.writeblock(conn) as w:
             w.upsert_rows(f"contacts.{bittype}", bit)
         conn.commit()

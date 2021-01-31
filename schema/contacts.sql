@@ -73,7 +73,7 @@ CREATE TABLE contacts.urls (
     url character varying(150),
     username character varying(50),
     password character varying(50),
-    password_enc text,
+    password_enc bytea,
     constraint chk_password_enc check(password is null or password_enc is null),
 );
 
