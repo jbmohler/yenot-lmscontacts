@@ -10,4 +10,5 @@ setup(
     author_email="joel@kiwistrawberry.us",
     url="https://bitbucket.org/jbmohler/lmscontacts",
     packages=["lcserver"],
+    install_requires=["yenot", "cryptography"],
 )
