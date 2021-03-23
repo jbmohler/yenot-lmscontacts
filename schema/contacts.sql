@@ -74,7 +74,7 @@ CREATE TABLE contacts.urls (
     username character varying(50),
     password character varying(50),
     password_enc bytea,
-    constraint chk_password_enc check(password is null or password_enc is null),
+    constraint chk_password_enc check(password is null or password_enc is null)
 );
 
 create view contacts.perfts_search as 
