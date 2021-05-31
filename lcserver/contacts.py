@@ -301,8 +301,8 @@ where false"""
         columns, rows = api.sql_tab2(conn, select)
 
         if bittype == "urls":
-            # TODO: after all encrypted and password removed, include that here
             columns = [c for c in columns if c[0] != "password_enc"]
+            columns.append(("password", None))
 
         def default_row(index, row):
             row.id = str(uuid.uuid1())
@@ -343,14 +343,15 @@ where bit.id=%(bit_id)s"""
             # with password
             f = fernet_keyed()
 
-            columns = api.tab2_columns_transform(rawdata[0], remove=["password_enc"])
+            columns = api.tab2_columns_transform(
+                rawdata[0], remove=["password_enc"], insert=[("username", "password")]
+            )
 
             def decrypt(oldrow, row):
-                if row.password == None and oldrow.password_enc != None:
+                if oldrow.password_enc != None:
+                    enc = oldrow.password_enc
                     # convert the psycopg2 memoryview to bytes
-                    row.password = f.decrypt(oldrow.password_enc.tobytes()).decode(
-                        "utf8"
-                    )
+                    row.password = f.decrypt(enc.tobytes()).decode("utf8")
 
             rows = api.tab2_rows_transform(rawdata, columns, decrypt)
             # not so raw any more, but that's ok
@@ -428,10 +429,11 @@ def put_api_persona_contact_bits(per_id, bit_id):
             columns = []
             to_copy = []
             for c in bit.DataRow.__slots__:
-                columns.append(c)
-                to_copy.append(c)
                 if c == "password":
                     columns.append("password_enc")
+                else:
+                    columns.append(c)
+                    to_copy.append(c)
 
             tt = rtlib.simple_table(columns)
             for row in bit.rows:
@@ -440,7 +442,6 @@ def put_api_persona_contact_bits(per_id, bit_id):
                         setattr(r2, a, getattr(row, a))
                     if row.password != None:
                         r2.password_enc = f.encrypt(row.password.encode("utf8"))
-                    r2.password = None
 
             bit = tt
 

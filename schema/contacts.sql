@@ -72,9 +72,7 @@ CREATE TABLE contacts.urls (
     memo text,
     url character varying(150),
     username character varying(50),
-    password character varying(50),
-    password_enc bytea,
-    constraint chk_password_enc check(password is null or password_enc is null)
+    password_enc bytea
 );
 
 create view contacts.perfts_search as 
@@ -96,7 +94,6 @@ create view contacts.bits as
 	json_build_object(
 		'url', url,
 		'username', username,
-		'password', password,
 		'password_enc', password_enc) as bit_data
     from contacts.urls
 )union all(
