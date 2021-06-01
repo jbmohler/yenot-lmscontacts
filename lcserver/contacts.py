@@ -36,14 +36,11 @@ def get_api_personas_list():
     tag = request.query.get("tag_id", None)
 
     select = """
-select personas.id, 
-    concat_ws(' ',
-        case when personas.title='' then null else personas.title end,
-        case when personas.f_name='' then null else personas.f_name end,
-        case when personas.l_name='' then null else personas.l_name end) as entity_name,
+select personas.id,
+    personas.entity_name,
+    personas.corporate_entity,
     personas.l_name, personas.f_name, personas.title, personas.organization
-from contacts.personas
-join contacts.perfts_search fts on personas.id=fts.id
+from contacts.personas_calc as personas
 where /*WHERE*/
 """
 
@@ -53,14 +50,14 @@ where /*WHERE*/
         params["frag"] = api.sanitize_fts(frag)
         params["idlist"] = tuple(included.split(";"))
         wheres.append(
-            "(fts.fts_search @@ to_tsquery(%(frag)s) or fts.id in %(idlist)s)"
+            "(personas.fts_search @@ to_tsquery(%(frag)s) or personas.id in %(idlist)s)"
         )
     elif frag in ["", None] and included not in ["", None]:
         params["idlist"] = tuple(included.split(";"))
-        wheres.append("fts.id in %(idlist)s")
+        wheres.append("personas.id in %(idlist)s")
     elif frag not in ["", None] and included in ["", None]:
         params["frag"] = api.sanitize_fts(frag)
-        wheres.append("fts.fts_search @@ to_tsquery(%(frag)s)")
+        wheres.append("personas.fts_search @@ to_tsquery(%(frag)s)")
     if tag not in ["", None]:
         params["tag"] = tag
         wheres.append(
@@ -75,6 +72,7 @@ where /*WHERE*/
     with app.dbconn() as conn:
         cm = api.ColumnMap(
             id=api.cgen.lms_personas_persona.surrogate(),
+            corporate_entity=api.cgen.auto(hidden=True),
             entity_name=api.cgen.lms_personas_persona.name(
                 url_key="id", represents=True
             ),
@@ -88,14 +86,14 @@ where /*WHERE*/
 
 def _get_api_persona(a_id=None, newrow=False):
     select = """
-select
-    concat_ws(' ',
-        case when personas.title='' then null else personas.title end,
-        case when personas.f_name='' then null else personas.f_name end,
-        case when personas.l_name='' then null else personas.l_name end) as entity_name,
-    personas.*,
+select personas.id, 
+    personas.entity_name,
+    personas.corporate_entity,
+    personas.l_name, personas.f_name, personas.title, personas.organization,
+    personas.memo,
+    personas.birthday, personas.anniversary,
     taglist.tag_ids
-from contacts.personas
+from contacts.personas_calc personas
 join lateral (
     select array_agg(tagpersona.tag_id::text) as tag_ids
     from contacts.tagpersona
@@ -143,16 +141,16 @@ where /*BWHERE*/"""
         f = fernet_keyed()
 
         def decrypt(oldrow, row):
-            if (
-                "password_enc" in oldrow.bit_data
-                and oldrow.bit_data["password_enc"] != None
-            ):
+            if "password_enc" in oldrow.bit_data:
                 # the dictionary from postgres comes through with password_enc as a string
                 penc = oldrow.bit_data["password_enc"]
-                if penc[:2] != r"\x":
-                    raise ValueError("expecting hex data prefixed by \\x")
-                penc = bytes.fromhex(penc[2:])
-                row.bit_data["password"] = f.decrypt(penc).decode("utf8")
+                if penc is None:
+                    row.bit_data["password"] = None
+                else:
+                    if penc[:2] != r"\x":
+                        raise ValueError("expecting hex data prefixed by \\x")
+                    penc = bytes.fromhex(penc[2:])
+                    row.bit_data["password"] = f.decrypt(penc).decode("utf8")
                 del row.bit_data["password_enc"]
 
         rows = api.tab2_rows_transform(bit_colrows, bit_colrows[0], decrypt)
@@ -466,3 +464,23 @@ delete from contacts.email_addresses where persona_id=%(pid)s and id=%(bid)s;
         conn.commit()
 
     return api.Results().json_out()
+
+
+@app.get("/api/personas/all-bits", name="get_api_personas_all_bits")
+def get_api_personas_all_bits():
+    bittype = request.query.get("bit_type", None)
+
+    if bittype != "urls":
+        raise api.UserError("not-implemented", "only urls are supported at this point")
+
+    select = """
+select urls.persona_id, urls.id,
+    personas.entity_name
+from contacts.urls
+join contacts.personas_calc personas on personas.id=urls.persona_id
+"""
+
+    results = api.Results()
+    with app.dbconn() as conn:
+        results.tables["contacts"] = api.sql_tab2(conn, select)
+    return results.json_out()

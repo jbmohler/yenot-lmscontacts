@@ -75,8 +75,8 @@ CREATE TABLE contacts.urls (
     password_enc bytea
 );
 
-create view contacts.perfts_search as 
-select id, 
+create view contacts.perfts_search as
+select id,
     to_tsvector(coalesce(l_name, ''))||
     to_tsvector(coalesce(f_name, ''))||
     to_tsvector(coalesce(organization, ''))||
@@ -84,7 +84,21 @@ select id,
     to_tsvector(coalesce(memo, '')) as fts_search
 from contacts.personas;
 
-create view contacts.bits as 
+create view contacts.personas_calc as
+select personas.*,
+    to_tsvector(coalesce(l_name, ''))||
+    to_tsvector(coalesce(f_name, ''))||
+    to_tsvector(coalesce(organization, ''))||
+    to_tsvector(coalesce(title, ''))||
+    to_tsvector(coalesce(memo, '')) as fts_search,
+    -- see also constraints related to corporate_entity & f_name
+    concat_ws(' ',
+        case when personas.title='' then null else personas.title end,
+        case when personas.f_name='' then null else personas.f_name end,
+        case when personas.l_name='' then null else personas.l_name end) as entity_name
+from contacts.personas;
+
+create view contacts.bits as
 (
     select id, persona_id, 'urls' as bit_type,
 	name, memo, is_primary,
