@@ -363,7 +363,7 @@ where bit.id=%(bit_id)s"""
 @app.put("/api/persona/<per_id>/bit/<bit_id>", name="put_api_persona_bit")
 def put_api_persona_contact_bits(per_id, bit_id):
     base_cols = ["is_primary", "name", "memo"]
-    bt_url_cols = ["url", "username", "password"]
+    bt_url_cols = ["url", "username", "password", "pw_reset_dt", "pw_next_reset_dt"]
     bt_email_cols = ["email"]
     bt_number_cols = ["number"]
     bt_address_cols = ["address1", "address2", "city", "state", "zip", "country"]

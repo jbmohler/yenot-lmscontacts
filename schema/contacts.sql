@@ -72,7 +72,9 @@ CREATE TABLE contacts.urls (
     memo text,
     url character varying(150),
     username character varying(50),
-    password_enc bytea
+    password_enc bytea,
+    pw_reset_dt date,
+    pw_next_reset_dt date
 );
 
 create view contacts.perfts_search as
@@ -101,46 +103,48 @@ from contacts.personas;
 create view contacts.bits as
 (
     select id, persona_id, 'urls' as bit_type,
-	name, memo, is_primary,
+        name, memo, is_primary,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, ''))||
         to_tsvector(coalesce(url, '')) as fts_search,
-	json_build_object(
-		'url', url,
-		'username', username,
-		'password_enc', password_enc) as bit_data
+        json_build_object(
+                'url', url,
+                'username', username,
+                'password_enc', password_enc,
+                'pw_reset_dt', pw_reset_dt,
+                'pw_next_reset_dt', pw_next_reset_dt) as bit_data
     from contacts.urls
 )union all(
     select id, persona_id, 'street_addresses' as bit_type,
-	name, memo, is_primary,
+        name, memo, is_primary,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, ''))||
         to_tsvector(coalesce(address1, ''))||
         to_tsvector(coalesce(address2, ''))||
         to_tsvector(coalesce(city, '')) as fts_search,
-	json_build_object(
-		'address1', address1,
-		'address2', address2,
-		'city', city,
-		'state', state,
-		'zip', zip,
-		'country', country) as bit_data
+        json_build_object(
+                'address1', address1,
+                'address2', address2,
+                'city', city,
+                'state', state,
+                'zip', zip,
+                'country', country) as bit_data
     from contacts.street_addresses
 )union all(
     select id, persona_id, 'phone_numbers' as bit_type,
-	name, memo, is_primary,
+        name, memo, is_primary,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, '')) as fts_search,
-	json_build_object(
-		'number', number) as bit_data
+        json_build_object(
+                'number', number) as bit_data
     from contacts.phone_numbers
 )union all(
     select id, persona_id, 'email_addresses' as bit_type,
-	name, memo, is_primary,
+        name, memo, is_primary,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, '')) as fts_search,
-	json_build_object(
-		'email', email) as bit_data
+        json_build_object(
+                'email', email) as bit_data
     from contacts.email_addresses
 );
 
