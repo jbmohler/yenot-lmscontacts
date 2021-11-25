@@ -10,7 +10,6 @@ app = api.get_global_app()
 
 
 def fernet_keyed():
-
     key = os.environ["LMS_CONTACTS_KEY"].encode("utf8")
 
     return cryptography.fernet.Fernet(key)
@@ -124,7 +123,11 @@ where /*BWHERE*/"""
 
     results = api.Results()
     with app.dbconn() as conn:
-        columns, rows = api.sql_tab2(conn, select, params)
+        cm = api.ColumnMap(
+            entity_name=api.cgen.auto(skip_write=True),
+            tag_ids=api.cgen.auto(skip_write=True),
+        )
+        columns, rows = api.sql_tab2(conn, select, params, cm)
 
         if newrow:
 
