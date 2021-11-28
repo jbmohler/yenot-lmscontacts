@@ -41,6 +41,7 @@ select personas.id,
     personas.l_name, personas.f_name, personas.title, personas.organization
 from contacts.personas_calc as personas
 where /*WHERE*/
+order by personas.entity_name
 """
 
     params = {}
