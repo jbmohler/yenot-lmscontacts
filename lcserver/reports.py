@@ -1,5 +1,3 @@
-import uuid
-from bottle import request
 import yenot.backend.api as api
 
 app = api.get_global_app()
@@ -17,7 +15,7 @@ def get_api_personas_address_list_prompts():
     report_prompts=get_api_personas_address_list_prompts,
     report_title="Street Address List",
 )
-def get_api_personas_list():
+def get_api_personas_list(request):
     tag = request.query.get("tag_id", None)
 
     select = """

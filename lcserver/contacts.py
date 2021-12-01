@@ -2,7 +2,6 @@ import os
 import uuid
 import json
 import cryptography.fernet
-from bottle import request
 import rtlib
 import yenot.backend.api as api
 
@@ -29,7 +28,7 @@ def get_api_personas_list_prompts():
     report_prompts=get_api_personas_list_prompts,
     report_title="Contact List",
 )
-def get_api_personas_list():
+def get_api_personas_list(request):
     frag = request.query.get("frag", None)
     included = request.query.get("included", None)
     tag = request.query.get("tag_id", None)
@@ -286,7 +285,7 @@ delete from contacts.personas where id=%(pid)s;
 
 
 @app.get("/api/persona/<per_id>/bit/new", name="get_api_persona_bit_new")
-def get_api_persona_bit_new(per_id):
+def get_api_persona_bit_new(request, per_id):
     bittype = request.query.get("bit_type")
 
     if bittype not in ("urls", "phone_numbers", "street_addresses", "email_addresses"):
@@ -317,7 +316,7 @@ where false"""
 
 
 @app.get("/api/persona/<per_id>/bit/<bit_id>", name="get_api_persona_bit")
-def get_api_persona_bit(per_id, bit_id):
+def get_api_persona_bit(request, per_id, bit_id):
     bittype = request.query.get("bit_type", None)
 
     if bittype not in ("urls", "phone_numbers", "street_addresses", "email_addresses"):
@@ -471,7 +470,7 @@ delete from contacts.email_addresses where persona_id=%(pid)s and id=%(bid)s;
 
 
 @app.get("/api/personas/all-bits", name="get_api_personas_all_bits")
-def get_api_personas_all_bits():
+def get_api_personas_all_bits(request):
     bittype = request.query.get("bit_type", None)
 
     if bittype != "urls":

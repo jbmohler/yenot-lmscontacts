@@ -1,6 +1,5 @@
 import os
 import random
-from bottle import request
 import yenot.backend.api as api
 from . import word_list
 
@@ -101,7 +100,7 @@ def words(bits):
 
 
 @app.get("/api/password/generate", name="get_api_password_generate")
-def get_api_password_generate():
+def get_api_password_generate(request):
     mode = request.query.get("mode")
     bits = int(request.query.get("bits", 50))
 
