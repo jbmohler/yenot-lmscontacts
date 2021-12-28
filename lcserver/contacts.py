@@ -9,9 +9,18 @@ app = api.get_global_app()
 
 
 def fernet_keyed():
-    key = os.environ["LMS_CONTACTS_KEY"].encode("utf8")
+    def _fernet(envkey):
+        key = os.environ[envkey]
+        return cryptography.fernet.Fernet(key.encode("ascii"))
 
-    return cryptography.fernet.Fernet(key)
+    basekey = "LMS_CONTACTS_KEY"
+    fernetbase = _fernet(basekey)
+    rotated = [f"{basekey}_ROTATE{i+1}" for i in range(3)]
+    ferns = [_fernet(rkey) for rkey in rotated if rkey in os.environ]
+
+    print(f"Returning MultiFernet with {len(ferns)} rotated keys")
+
+    return cryptography.fernet.MultiFernet([fernetbase, *ferns])
 
 
 def get_api_personas_list_prompts():
@@ -448,6 +457,38 @@ def put_api_persona_contact_bits(per_id, bit_id):
 
         with api.writeblock(conn) as w:
             w.upsert_rows(f"contacts.{bittype}", bit)
+        conn.commit()
+
+    return api.Results().json_out()
+
+
+@app.put("/api/persona/<per_id>/bit/<bit_id>/rotate", name="put_api_persona_bit_rotate")
+def put_api_persona_contact_bit_rotate(per_id, bit_id):
+    # bit_type must be url
+
+    select = """
+select id, persona_id, password_enc
+from contacts.urls
+where id=%(bitid)s and persona_id=%(perid)s
+"""
+    update = """
+update contacts.urls set password_enc=%(newpass)s
+where id=%(bitid)s and persona_id=%(perid)s
+"""
+
+    with app.dbconn() as conn:
+        row = api.sql_1object(conn, select, {"bitid": bit_id, "perid": per_id})
+
+        if row is None:
+            raise api.UserError("invalid-key", "No password bit for that id to rotate")
+
+        # use the key to encrypt the password
+        f = fernet_keyed()
+
+        newpass = f.rotate(row.password_enc.tobytes())
+        api.sql_void(
+            conn, update, {"bitid": bit_id, "perid": per_id, "newpass": newpass}
+        )
         conn.commit()
 
     return api.Results().json_out()
