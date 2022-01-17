@@ -200,12 +200,9 @@ def put_api_persona(per_id):
             "birthday",
         ],
     )
-    try:
-        tagdeltas = api.table_from_tab2(
-            "tagdeltas", required=["tags_add", "tags_remove"]
-        )
-    except KeyError:
-        tagdeltas = None
+    tagdeltas = api.table_from_tab2(
+        "tagdeltas", default_missing="none", required=["tags_add", "tags_remove"]
+    )
 
     if len(persona.rows) != 1 or persona.rows[0].id != per_id:
         raise api.UserError(
