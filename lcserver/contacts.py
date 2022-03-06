@@ -99,7 +99,7 @@ def put_api_personas_poll_changes(request):
 
 @app.get("/api/personas/poll-changes", name="get_api_personas_poll_changes")
 def get_api_personas_poll_changes(request):
-    return api.poll_listener(request, request.query.get("channel"))
+    return api.poll_listener(request, "personas")
 
 
 def _get_api_persona(a_id=None, newrow=False):
