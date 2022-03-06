@@ -92,6 +92,16 @@ order by personas.entity_name
     return results.json_out()
 
 
+@app.put("/api/personas/poll-changes", name="put_api_personas_poll_changes")
+def put_api_personas_poll_changes(request):
+    return api.start_listener(request, "personas")
+
+
+@app.get("/api/personas/poll-changes", name="get_api_personas_poll_changes")
+def get_api_personas_poll_changes(request):
+    return api.poll_listener(request, request.query.get("channel"))
+
+
 def _get_api_persona(a_id=None, newrow=False):
     select = """
 select personas.id, 
@@ -258,7 +268,7 @@ where tag_id in %(removes)s and persona_id=%(per)s"""
                 )
 
         payload = json.dumps({"id": per_id})
-        api.sql_void(conn, "notify personas, %(payload)s", {"payload": payload})
+        api.notify_listener(conn, "personas", payload)
         conn.commit()
 
     return api.Results().json_out()
@@ -284,7 +294,7 @@ delete from contacts.personas where id=%(pid)s;
         api.sql_void(conn, delete_sql, {"pid": per_id})
 
         payload = json.dumps({"id": per_id})
-        api.sql_void(conn, "notify personas, %(payload)s", {"payload": payload})
+        api.notify_listener(conn, "personas", payload)
         conn.commit()
 
     return api.Results().json_out()
