@@ -324,10 +324,11 @@ where false"""
         def default_row(index, row):
             row.id = str(uuid.uuid1())
             row.persona_id = per_id
+            row.is_primary = False
 
         rows = api.tab2_rows_default(columns, [None], default_row)
 
-        results.tables["bits", True] = columns, rows
+        results.tables["bit", True] = columns, rows
     return results.json_out()
 
 
