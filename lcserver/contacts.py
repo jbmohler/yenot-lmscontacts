@@ -123,7 +123,8 @@ select id, persona_id, bit_type,
     name, memo, is_primary,
     bit_data
 from contacts.bits
-where /*BWHERE*/"""
+where /*BWHERE*/
+order by bit_sequence"""
 
     wheres = []
     bwheres = []
@@ -318,8 +319,12 @@ where false"""
         columns, rows = api.sql_tab2(conn, select)
 
         if bittype == "urls":
-            columns = [c for c in columns if c[0] != "password_enc"]
+            columns = [
+                c for c in columns if c[0] not in ["password_enc", "bit_sequence"]
+            ]
             columns.append(("password", None))
+        else:
+            columns = [c for c in columns if c[0] not in ["bit_sequence"]]
 
         def default_row(index, row):
             row.id = str(uuid.uuid1())
@@ -362,7 +367,9 @@ where bit.id=%(bit_id)s"""
             f = fernet_keyed()
 
             columns = api.tab2_columns_transform(
-                rawdata[0], remove=["password_enc"], insert=[("username", "password")]
+                rawdata[0],
+                remove=["password_enc", "bit_sequence"],
+                insert=[("username", "password")],
             )
 
             def decrypt(oldrow, row):
@@ -374,14 +381,67 @@ where bit.id=%(bit_id)s"""
             rows = api.tab2_rows_transform(rawdata, columns, decrypt)
             # not so raw any more, but that's ok
             rawdata = columns, rows
+        else:
+            columns = api.tab2_columns_transform(rawdata[0], remove=["bit_sequence"])
+
+            def nothing(oldrow, row):
+                pass
+
+            rows = api.tab2_rows_transform(rawdata, columns, nothing)
+            # not so raw any more, but that's ok
+            rawdata = columns, rows
 
         results.tables["bit", True] = rawdata
 
     return results.json_out()
 
 
+@app.put("/api/persona/<per_id>/bits/reorder", name="put_api_persona_bits_reorder")
+def put_api_persona_bits_reorder(request, per_id):
+    # order this with bit_id1 ordered before bit_id2
+    bit_id1 = request.forms.get("bit_id1")
+    bit_id2 = request.forms.get("bit_id2")
+
+    select = """
+select id, bit_type, bit_sequence
+from contacts.bits
+where persona_id=%(pid)s and id in (%(bid1)s, %(bid2)s);
+"""
+
+    update = """
+update contacts.{bt} set bit_sequence=%(seq)s
+where id=%(bid)s;
+"""
+
+    with app.dbconn() as conn:
+        params = {"pid": per_id, "bid1": bit_id1, "bid2": bit_id2}
+        rows = api.sql_rows(conn, select, params)
+        rows.sort(key=lambda x: x.bit_sequence)
+
+        if len(rows) != 2:
+            raise api.UserError(
+                "invalid-keys",
+                "Could not find both bits; possibly deleted by another user",
+            )
+
+        bits = {row.id: row for row in rows}
+
+        # TODO use psycopg sql building for sql identifiers
+        up1 = update.format(bt=bits[bit_id1].bit_type)
+        params = {"seq": rows[0].bit_sequence, "bid": bit_id1}
+        api.sql_void(conn, up1, params)
+
+        up1 = update.format(bt=bits[bit_id2].bit_type)
+        params = {"seq": rows[1].bit_sequence, "bid": bit_id2}
+        api.sql_void(conn, up1, params)
+
+        conn.commit()
+
+    return api.Results().json_out()
+
+
 @app.put("/api/persona/<per_id>/bit/<bit_id>", name="put_api_persona_bit")
-def put_api_persona_contact_bits(per_id, bit_id):
+def put_api_persona_bit(per_id, bit_id):
     base_cols = ["is_primary", "name", "memo"]
     bt_url_cols = ["url", "username", "password", "pw_reset_dt", "pw_next_reset_dt"]
     bt_email_cols = ["email"]

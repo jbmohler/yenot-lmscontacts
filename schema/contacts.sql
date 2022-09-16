@@ -32,9 +32,12 @@ CREATE TABLE contacts.tagpersona (
     persona_id uuid not null references contacts.personas(id)
 );
 
+CREATE SEQUENCE bit_index_seq AS integer START WITH 100;
+
 CREATE TABLE contacts.email_addresses (
     id uuid primary key default uuid_generate_v1mc(),
     persona_id uuid not null references contacts.personas(id),
+    bit_sequence integer not null default nextval('bit_index_seq'),
     is_primary boolean not null default false,
     name text,
     memo text,
@@ -44,6 +47,7 @@ CREATE TABLE contacts.email_addresses (
 CREATE TABLE contacts.phone_numbers (
     id uuid primary key default uuid_generate_v1mc(),
     persona_id uuid not null references contacts.personas(id),
+    bit_sequence integer not null default nextval('bit_index_seq'),
     is_primary boolean not null default false,
     name text,
     memo text,
@@ -53,6 +57,7 @@ CREATE TABLE contacts.phone_numbers (
 CREATE TABLE contacts.street_addresses (
     id uuid primary key default uuid_generate_v1mc(),
     persona_id uuid not null references contacts.personas(id),
+    bit_sequence integer not null default nextval('bit_index_seq'),
     is_primary boolean not null default false,
     name text,
     memo text,
@@ -67,6 +72,7 @@ CREATE TABLE contacts.street_addresses (
 CREATE TABLE contacts.urls (
     id uuid primary key default uuid_generate_v1mc(),
     persona_id uuid not null references contacts.personas(id),
+    bit_sequence integer not null default nextval('bit_index_seq'),
     is_primary boolean not null default false,
     name text,
     memo text,
@@ -104,6 +110,7 @@ create view contacts.bits as
 (
     select id, persona_id, 'urls' as bit_type,
         name, memo, is_primary,
+        bit_sequence,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, ''))||
         to_tsvector(coalesce(url, '')) as fts_search,
@@ -117,6 +124,7 @@ create view contacts.bits as
 )union all(
     select id, persona_id, 'street_addresses' as bit_type,
         name, memo, is_primary,
+        bit_sequence,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, ''))||
         to_tsvector(coalesce(address1, ''))||
@@ -133,6 +141,7 @@ create view contacts.bits as
 )union all(
     select id, persona_id, 'phone_numbers' as bit_type,
         name, memo, is_primary,
+        bit_sequence,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, '')) as fts_search,
         json_build_object(
@@ -141,6 +150,7 @@ create view contacts.bits as
 )union all(
     select id, persona_id, 'email_addresses' as bit_type,
         name, memo, is_primary,
+        bit_sequence,
         to_tsvector(coalesce(memo, ''))||
         to_tsvector(coalesce(name, '')) as fts_search,
         json_build_object(
