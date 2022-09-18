@@ -12,9 +12,21 @@ CREATE TABLE contacts.personas (
     birthday date,
     anniversary date,
     organization text,
+    owner_id uuid references users(id) not null,
     constraint chk_corp_names check(not corporate_entity or (f_name is null and title is null and char_length(l_name) >= 2)),
     constraint chk_indiv_names check(corporate_entity or (char_length(l_name)>=2 or char_length(f_name)>=2))
 );
+
+CREATE TABLE contacts.persona_shares (
+    persona_id uuid not null references contacts.personas(id),
+    user_id uuid not null references users(id),
+    primary key (persona_id, user_id)
+);
+
+ALTER TABLE contacts.personas
+    ADD CONSTRAINT onwer_shares_fkey foreign key (id, owner_id)
+        references contacts.persona_shares(persona_id, user_id)
+        deferrable initially deferred;
 
 CREATE TABLE contacts.tags (
     id uuid primary key default uuid_generate_v1mc(),

@@ -8,6 +8,38 @@ import yenot.backend.api as api
 app = api.get_global_app()
 
 
+def _raise_unmatched_share(conn, persona_id):
+    select = """
+select count(*)
+from contacts.persona_shares pshare
+where pshare.persona_id=%(pid)s and pshare.user_id=%(uid)s
+"""
+
+    active = api.active_user(conn)
+    count = api.sql_1row(conn, select, {"pid": persona_id, "uid": active.id})
+
+    if count == 0:
+        raise api.UserError(
+            "user-not-authorized",
+            "This persona is not shared (or owned) by the active user.",
+        )
+
+
+def _raise_unmatched_owner(conn, persona_id, allow_new=False):
+    active = api.active_user(conn)
+    owner_id = api.sql_1row(
+        conn,
+        "select owner_id from contacts.personas where id=%(pid)s",
+        {"pid": persona_id},
+    )
+
+    if owner_id is None and allow_new:
+        return
+
+    if owner_id != active.id:
+        raise api.UserError("user-not-owner", "Only the owner may edit this persona.")
+
+
 def fernet_keyed():
     def _fernet(envkey):
         key = os.environ[envkey]
@@ -21,6 +53,28 @@ def fernet_keyed():
     print(f"Returning MultiFernet with {len(ferns)} rotated keys")
 
     return cryptography.fernet.MultiFernet([fernetbase, *ferns])
+
+
+@app.get("/api/personas/owner-list", name="get_api_personas_owner_list")
+def get_api_personas_owner_list(request):
+    # return users that have access to contacts
+    select = """
+select id, coalesce(full_name, username) as name
+from users
+join lateral (
+    select count(*)
+    from userroles
+    join roleactivities on roleactivities.roleid=userroles.roleid
+    where userroles.userid=users.id
+        and roleactivities.activityid=(select id from activities where act_name='get_api_personas_list')
+    ) has_contacts on has_contacts.count>0
+"""
+
+    results = api.Results()
+    with app.dbconn() as conn:
+        results.tables["owners", True] = api.sql_tab2(conn, select)
+
+    return results.json_out()
 
 
 def get_api_personas_list_prompts():
@@ -46,8 +100,11 @@ def get_api_personas_list(request):
 select personas.id,
     personas.entity_name,
     personas.corporate_entity,
-    personas.l_name, personas.f_name, personas.title, personas.organization
+    personas.l_name, personas.f_name, personas.title, personas.organization,
+    coalesce(users.full_name, users.username) as owner
 from contacts.personas_calc as personas
+join contacts.persona_shares pshare on pshare.persona_id=personas.id
+join users on users.id=personas.owner_id
 where /*WHERE*/
 order by personas.entity_name
 """
@@ -72,12 +129,17 @@ order by personas.entity_name
             "(select count(*) from contacts.tagpersona where tag_id=%(tag)s and persona_id=personas.id)>0"
         )
 
+    wheres.append("pshare.user_id=%(uid)s")
+
     if len(wheres) == 0:
         wheres.append("True")
     select = select.replace("/*WHERE*/", " and ".join(wheres))
 
     results = api.Results(default_title=True)
     with app.dbconn() as conn:
+        active = api.active_user(conn)
+        params["uid"] = active.id
+
         cm = api.ColumnMap(
             id=api.cgen.lms_personas_persona.surrogate(),
             corporate_entity=api.cgen.auto(hidden=True),
@@ -110,12 +172,24 @@ select personas.id,
     personas.l_name, personas.f_name, personas.title, personas.organization,
     personas.memo,
     personas.birthday, personas.anniversary,
+    personas.owner_id,
+    coalesce(users.full_name, users.username) as owner_name,
+    shares.share_refs,
     taglist.tag_ids
 from contacts.personas_calc personas
+join users on users.id=personas.owner_id
 join lateral (
     select array_agg(tagpersona.tag_id::text) as tag_ids
     from contacts.tagpersona
     where tagpersona.persona_id=personas.id) taglist on true
+join lateral (
+    select json_agg(json_build_object(
+        'id', pshare.user_id,
+        'name', coalesce(u2.full_name, u2.username)
+        )) as share_refs
+    from contacts.persona_shares pshare
+    join users u2 on u2.id=pshare.user_id
+    where pshare.persona_id=personas.id) shares on true
 where /*WHERE*/"""
 
     select_bits = """
@@ -143,8 +217,13 @@ order by bit_sequence"""
 
     results = api.Results()
     with app.dbconn() as conn:
+        if not newrow:
+            _raise_unmatched_share(conn, a_id)
+
         cm = api.ColumnMap(
             entity_name=api.cgen.auto(skip_write=True),
+            owner_name=api.cgen.auto(skip_write=True),
+            share_refs=api.cgen.auto(skip_write=True),
             tag_ids=api.cgen.auto(skip_write=True),
         )
         columns, rows = api.sql_tab2(conn, select, params, cm)
@@ -199,7 +278,7 @@ def get_api_persona_new():
 def put_api_persona(per_id):
     persona = api.table_from_tab2(
         "persona",
-        amendments=["id"],
+        amendments=["id", "owner_id"],
         options=[
             "corporate_entity",
             "l_name",
@@ -251,9 +330,27 @@ select unnest(%(adds)s)::uuid, %(per)s"""
 delete from contacts.tagpersona
 where tag_id in %(removes)s and persona_id=%(per)s"""
 
+    insert_share = """
+insert into contacts.persona_shares (persona_id, user_id)
+values (%(pid)s, %(uid)s);
+"""
+
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, persona.rows[0].id, allow_new=True)
+
+        share_to_owner = None
+        if getattr(persona.rows[0], "owner_id", None) is None:
+            active = api.active_user(conn)
+            persona.rows[0].owner_id = active.id
+
+            share_to_owner = {"pid": persona.rows[0].id, "uid": active.id}
+
         with api.writeblock(conn) as w:
             w.upsert_rows("contacts.personas", persona)
+
+        if share_to_owner:
+            api.sql_void(conn, insert_share, share_to_owner)
+
         if tagdeltas:
             if tagdeltas.rows[0].tags_add:
                 api.sql_void(
@@ -270,6 +367,26 @@ where tag_id in %(removes)s and persona_id=%(per)s"""
 
         payload = json.dumps({"id": per_id})
         api.notify_listener(conn, "personas", payload)
+        conn.commit()
+
+    return api.Results().json_out()
+
+
+@app.put("/api/persona/<per_id>/reshare", name="put_api_persona_reshare")
+def put_persona_reshare(request, per_id):
+    personas = api.table_from_tab2(
+        "persona", required=["id", "shares"], matrix=["shares"]
+    )
+
+    with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, persona.rows[0].id)
+
+        with api.writeblock(conn) as w:
+            w.update_rows(
+                "contacts.personas",
+                personas,
+                matrix={"shares": "contacts.persona_shares"},
+            )
         conn.commit()
 
     return api.Results().json_out()
@@ -292,10 +409,41 @@ delete from contacts.personas where id=%(pid)s;
 """
 
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
         api.sql_void(conn, delete_sql, {"pid": per_id})
 
         payload = json.dumps({"id": per_id})
         api.notify_listener(conn, "personas", payload)
+        conn.commit()
+
+    return api.Results().json_out()
+
+
+@app.put("/api/persona/<per_id>/reown", name="put_api_persona_reown")
+def put_api_persona_reown(request, per_id):
+    owner_id = request.forms.get("owner_id")
+
+    upsert_new = """
+insert into contacts.persona_shares (persona_id, user_id)
+values (%(pid)s, %(new_uid)s)
+on conflict do nothing;"""
+
+    update = """
+update contacts.personas set owner_id=%(new_uid)s where id=%(pid)s;
+"""
+
+    with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
+        # This persona will be shared with the active user but owned by the new
+        # `owner_id`.   The persona need not be shared with the new owner
+        # previously.
+
+        params = {"pid": per_id, "new_uid": owner_id}
+
+        api.sql_void(conn, upsert_new, params)
+        api.sql_void(conn, update, params)
         conn.commit()
 
     return api.Results().json_out()
@@ -315,6 +463,8 @@ where false"""
 
     results = api.Results()
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
         select = select.replace("/*BIT*/", bittype)
         columns, rows = api.sql_tab2(conn, select)
 
@@ -351,6 +501,8 @@ where bit.id=%(bit_id)s"""
 
     results = api.Results()
     with app.dbconn() as conn:
+        _raise_unmatched_share(conn, per_id)
+
         if bittype == None:
             bittype = api.sql_1row(
                 conn,
@@ -414,6 +566,8 @@ where id=%(bid)s;
 """
 
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
         params = {"pid": per_id, "bid1": bit_id1, "bid2": bit_id2}
         rows = api.sql_rows(conn, select, params)
         rows.sort(key=lambda x: x.bit_sequence)
@@ -498,6 +652,8 @@ def put_api_persona_bit(per_id, bit_id):
         row.id = bit_id
 
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
         if bittype == "urls" and "password" in bit.DataRow.__slots__:
             # use the key to encrypt the password
             f = fernet_keyed()
@@ -572,6 +728,8 @@ delete from contacts.email_addresses where persona_id=%(pid)s and id=%(bid)s;
 """
 
     with app.dbconn() as conn:
+        _raise_unmatched_owner(conn, per_id)
+
         api.sql_void(conn, delete_sql, {"pid": per_id, "bid": bit_id})
         conn.commit()
 
