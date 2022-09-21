@@ -374,7 +374,7 @@ values (%(pid)s, %(uid)s);
 
 @app.put("/api/persona/<per_id>/reshare", name="put_api_persona_reshare")
 def put_persona_reshare(request, per_id):
-    personas = api.table_from_tab2(
+    persona = api.table_from_tab2(
         "persona", required=["id", "shares"], matrix=["shares"]
     )
 
@@ -384,7 +384,7 @@ def put_persona_reshare(request, per_id):
         with api.writeblock(conn) as w:
             w.update_rows(
                 "contacts.personas",
-                personas,
+                persona,
                 matrix={"shares": "contacts.persona_shares"},
             )
         conn.commit()
