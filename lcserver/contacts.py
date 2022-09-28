@@ -404,6 +404,8 @@ delete from contacts.email_addresses where persona_id=%(pid)s;
 -- delete tags
 delete from contacts.tagpersona where persona_id=%(pid)s;
 
+delete from contacts.persona_shares where persona_id=%(pid)s;
+
 -- delete the main persona
 delete from contacts.personas where id=%(pid)s;
 """
