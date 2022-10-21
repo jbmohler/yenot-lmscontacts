@@ -24,7 +24,7 @@ CREATE TABLE contacts.persona_shares (
 );
 
 ALTER TABLE contacts.personas
-    ADD CONSTRAINT onwer_shares_fkey foreign key (id, owner_id)
+    ADD CONSTRAINT owner_shares_fkey foreign key (id, owner_id)
         references contacts.persona_shares(persona_id, user_id)
         deferrable initially deferred;
 
